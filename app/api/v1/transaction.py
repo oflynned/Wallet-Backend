@@ -9,7 +9,7 @@ transaction_endpoint = Blueprint("transaction", __name__)
 
 @transaction_endpoint.route("/", methods=["GET", "POST"])
 def index():
-    return Handler.get_json_res({"file": "transaction"})
+    return Handler.get_json_res(list(mongo.db.transactions.find()))
 
 
 # make a transaction either to or from your account -- may be positive or negative
@@ -17,11 +17,11 @@ def index():
 @transaction_endpoint.route("/make-individual-transaction", methods=["POST"])
 def individual_transaction():
     data = request.json
-    Transaction.make_transaction(data["from_id"], data["to_id"],
-                                 data["amount"], data["description"],
-                                 "individual_transaction")
+    outcome = Transaction.make_transaction(data["from_id"], data["to_id"],
+                                           data["amount"], data["description"],
+                                           "individual_transaction")
 
-    return Handler.get_json_res({"success": True})
+    return Handler.get_json_res({"success": outcome})
 
 
 # paying for an item via android pay -- take from balance
@@ -30,12 +30,18 @@ def individual_transaction():
 def plynk_card_payment():
     data = request.json
     user_id = data["user_id"]
-    card = Card.get_user_card(user_id)
+    amount = data["amount"]
 
-    Transaction.make_transaction(user_id, card["merchant_id"],
-                                 data["amount"], data["description"],
-                                 "plynk_good_service_payment")
-    return Handler.get_json_res({"success": True})
+    if User.does_user_exist(user_id):
+        if Transaction.get_user_balance(user_id) >= amount:
+            outcome = Transaction.make_transaction(user_id, data["merchant_id"],
+                                                   data["amount"], data["description"],
+                                                   "plynk_good_service_payment")
+            return Handler.get_json_res({"success": outcome})
+
+        return Handler.get_json_res({"success": False, "reason": "insufficient_funds"})
+
+    return Handler.get_json_res({"success": False, "reason": "user_not_found"})
 
 
 # adding balance via android pay or added card -- add to balance
@@ -44,9 +50,9 @@ def plynk_card_payment():
 @transaction_endpoint.route("/make-card-topup", methods=["POST"])
 def load_card_money():
     data = request.json
-    Transaction.make_transaction(data["bank_card_id"], data["user_id"],
-                                 data["amount"], data["description"],
-                                 data["preload_type"])
+    Transaction.make_institution_transaction(data["bank_card_id"], data["user_id"],
+                                             data["amount"], data["description"],
+                                             data["preload_type"])
     return Handler.get_json_res({"success": True})
 
 
@@ -54,9 +60,10 @@ def load_card_money():
 def withdraw_to_bank():
     data = request.json
     user = User.get_user(data["user_id"])
-    Transaction.make_transaction(data["user_id"], user["bank_card_id"],
-                                 data["amount"], data["description"],
-                                 "withdrawal_to_bank")
+    Transaction.make_institution_transaction(data["user_id"], user["bank_card_id"],
+                                             data["amount"], data["description"],
+                                             "withdrawal_to_bank")
+    return Handler.get_json_res({"success": True})
 
 
 # POST { user_id: <string> }
@@ -64,7 +71,32 @@ def withdraw_to_bank():
 def query_transactions():
     user_id = request.json["user_id"]
     if User.does_user_exist(user_id):
-        transactions = list(mongo.db.transactions.find({"$or": [{"from_id": user_id}, {"to_id": user_id}]}))
+        transactions = list(
+            mongo.db.transactions.find({"$or": [{"user_id": user_id}, {"from_id": user_id}, {"to_id": user_id}]}))
+
+        for t in transactions:
+            if User.does_user_exist(t["from_id"]):
+                t["user_paid_from"] = User.get_user(t["from_id"])
+            else:
+                t["user_paid_from"] = {
+                    "user_id": t["transaction_type"],
+                    "forename": "Android",
+                    "surname": "Pay",
+                    "gender": "other",
+                    "profile_pic": ""
+                }
+
+            if User.does_user_exist(t["to_id"]):
+                t["user_paid_to"] = User.get_user(t["to_id"])
+            else:
+                t["user_paid_to"] = {
+                    "user_id": t["transaction_type"],
+                    "forename": t["to_id"],
+                    "surname": t["to_id"],
+                    "gender": "other",
+                    "profile_pic": ""
+                }
+
         return Handler.get_json_res(transactions)
     return Handler.get_json_res({"success": False})
 
@@ -75,62 +107,7 @@ def get_user_balance():
     user_id = request.json["user_id"]
 
     if User.does_user_exist(user_id):
-        pay_transaction_to_user = list(mongo.db.transactions.find({"$and": [
-            {"from_id": user_id},
-            {"transaction_type": "individual_transaction"}]
-        }))
-
-        receive_transaction_from_user = list(mongo.db.transactions.find({"$and": [
-            {"to_id": user_id},
-            {"transaction_type": "individual_transaction"}]
-        }))
-
-        preloadings_to_card = list(mongo.db.transactions.find({
-            "$and": [
-                {"user_id": user_id},
-                {"$or": [
-                    {"transaction_type": "preload_card"},
-                    {"transaction_type": "preload_android_pay"}
-                ]}
-            ]
-        }))
-
-        user_card_numbers = []
-        user_bank_cards = Card.get_user_bank_cards(user_id)
-        for card in user_bank_cards:
-            user_card_numbers.append(card["card_number"])
-
-        payments_from_card = list(mongo.db.transactions.find({
-            "$and": [
-                {"user_id": user_id},
-                {"from_id": {"$in": user_card_numbers}},
-                {"transaction_type": "plynk_good_service_payment"}
-            ]
-        }))
-
-        withdrawals_to_bank = list(mongo.db.transactions.find({
-            "$and": [
-                {"user_id": user_id},
-                {"to_id": {"$in": user_card_numbers}},
-                {"transaction_type": "withdrawal_to_bank"}
-            ]
-        }))
-
-        balance = 0
-
-        for t in pay_transaction_to_user:
-            balance -= t["amount"]
-        for t in receive_transaction_from_user:
-            balance += t["amount"]
-
-        for t in preloadings_to_card:
-            balance += t["amount"]
-        for t in payments_from_card:
-            balance -= t["amount"]
-
-        for t in withdrawals_to_bank:
-            balance -= t["amount"]
-
+        balance = Transaction.get_user_balance(user_id)
         return Handler.get_json_res({"balance": float("{:.2f}".format(balance))})
 
     return Handler.get_json_res({"success": False})
@@ -138,8 +115,17 @@ def get_user_balance():
 
 class Transaction:
     @staticmethod
+    def get_money_institutions():
+        # android pay, bank
+        return [{
+            "user_id": "android_pay"
+        }, {
+            "user_id": "bank"
+        }]
+
+    @staticmethod
     def make_transaction(from_id, to_id, amount, description, transaction_type):
-        if User.does_user_exist(from_id) and User.does_user_exist(to_id):
+        if User.does_user_exist(from_id):
             transaction = {
                 "from_id": str(from_id),
                 "to_id": str(to_id),
@@ -151,6 +137,94 @@ class Transaction:
             }
 
             mongo.db.transactions.save(transaction)
-            return Handler.get_json_res({"success": True})
+            return True
 
-        return Handler.get_json_res({"success": False})
+        return False
+
+    @staticmethod
+    def make_institution_transaction(from_id, to_id, amount, description, transaction_type):
+        transaction = {
+            "from_id": str(from_id),
+            "to_id": str(to_id),
+            "amount": float(amount),
+            "currency": "euro",
+            "description": str(description),
+            "transaction_type": transaction_type,
+            "time": Handler.get_current_time_in_millis()
+        }
+
+        mongo.db.transactions.save(transaction)
+
+        return True
+
+    @staticmethod
+    def get_transaction_log(user_id):
+        return list(mongo.db.transactions.find({"$or": [
+            {"to_id": user_id},
+            {"from_id": user_id}
+        ]}))
+
+    @staticmethod
+    def get_user_balance(user_id):
+        if User.does_user_exist(user_id):
+            pay_transaction_to_user = list(mongo.db.transactions.find({"$and": [
+                {"from_id": user_id},
+                {"transaction_type": "individual_transaction"}]
+            }))
+
+            receive_transaction_from_user = list(mongo.db.transactions.find({"$and": [
+                {"to_id": user_id},
+                {"transaction_type": "individual_transaction"}]
+            }))
+
+            preloadings_via_android_pay = list(mongo.db.transactions.find({
+                "$and": [
+                    {"to_id": user_id},
+                    {"transaction_type": "preload_android_pay"}
+                ]
+            }))
+
+            preloadings_via_card = list(mongo.db.transactions.find({
+                "$and": [
+                    {"to_id": user_id},
+                    {"transaction_type": "preload_card"}
+                ]
+            }))
+
+            user_card_numbers = []
+            user_bank_cards = Card.get_user_bank_cards(user_id)
+            for card in user_bank_cards:
+                user_card_numbers.append(card["card_number"])
+
+            payments_from_card = list(mongo.db.transactions.find({
+                "$and": [
+                    {"from_id": user_id},
+                    {"transaction_type": "plynk_good_service_payment"}
+                ]
+            }))
+
+            withdrawals_to_bank = list(mongo.db.transactions.find({
+                "$and": [
+                    {"from_id": user_id},
+                    {"transaction_type": "withdrawal_to_bank"}
+                ]
+            }))
+
+            balance = 0
+
+            for t in pay_transaction_to_user:
+                balance -= t["amount"]
+            for t in receive_transaction_from_user:
+                balance += t["amount"]
+
+            for t in preloadings_via_android_pay:
+                balance += t["amount"]
+            for t in preloadings_via_card:
+                balance += t["amount"]
+            for t in payments_from_card:
+                balance -= t["amount"]
+
+            for t in withdrawals_to_bank:
+                balance -= t["amount"]
+
+            return balance
