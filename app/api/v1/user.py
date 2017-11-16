@@ -64,24 +64,6 @@ def get_user():
     return Handler.get_json_res(User.get_user(data["user_id"]))
 
 
-# POST { user_id: <string>, passport_details: { passport_number: <string> }
-@user.route("/add-passport-details", methods=["POST"])
-def add_passport_details():
-    pass
-
-
-# POST {
-# user_id:  <string>,
-# address:  {
-#               house_number: <string>, street: <string>, city: <string>,
-#               county: <string>, country: <string>, postcode: <string>
-#           }
-# }
-@user.route("/add-address-details", methods=["POST"])
-def add_address_details():
-    pass
-
-
 # POST { user_id: <string>, fcm_token: <string> }
 @user.route("/edit-fcm", methods=["POST"])
 def edit_user_fcm():

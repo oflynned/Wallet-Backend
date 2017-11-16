@@ -72,29 +72,29 @@ def query_transactions():
     user_id = request.json["user_id"]
     if User.does_user_exist(user_id):
         transactions = list(
-            mongo.db.transactions.find({"$or": [{"user_id": user_id}, {"from_id": user_id}, {"to_id": user_id}]}))
+            mongo.db.transactions.find({"$or": [
+                {"user_id": user_id},
+                {"from_id": user_id},
+                {"to_id": user_id}
+            ]}))
 
         for t in transactions:
             if User.does_user_exist(t["from_id"]):
-                t["user_paid_from"] = User.get_user(t["from_id"])
+                t["paid_from"] = User.get_user(t["from_id"])
             else:
-                t["user_paid_from"] = {
+                t["paid_from"] = {
                     "user_id": t["transaction_type"],
-                    "forename": "Android",
-                    "surname": "Pay",
-                    "gender": "other",
-                    "profile_pic": ""
+                    "name": t["transaction_type"],
+                    "picture_url": ""
                 }
 
             if User.does_user_exist(t["to_id"]):
-                t["user_paid_to"] = User.get_user(t["to_id"])
+                t["paid_to"] = User.get_user(t["to_id"])
             else:
-                t["user_paid_to"] = {
+                t["paid_to"] = {
                     "user_id": t["transaction_type"],
-                    "forename": t["to_id"],
-                    "surname": t["to_id"],
-                    "gender": "other",
-                    "profile_pic": ""
+                    "name": t["transaction_type"],
+                    "picture_url": ""
                 }
 
         return Handler.get_json_res(transactions)
@@ -187,7 +187,7 @@ class Transaction:
             preloadings_via_card = list(mongo.db.transactions.find({
                 "$and": [
                     {"to_id": user_id},
-                    {"transaction_type": "preload_card"}
+                    {"transaction_type": "preload_bank_card"}
                 ]
             }))
 
@@ -221,9 +221,9 @@ class Transaction:
                 balance += t["amount"]
             for t in preloadings_via_card:
                 balance += t["amount"]
+
             for t in payments_from_card:
                 balance -= t["amount"]
-
             for t in withdrawals_to_bank:
                 balance -= t["amount"]
 
