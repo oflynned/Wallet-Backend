@@ -54,7 +54,9 @@ def load_card_money():
 def withdraw_to_bank():
     data = request.json
     user = User.get_user(data["user_id"])
-    Transaction.make_transaction(data["user_id"], user[""])
+    Transaction.make_transaction(data["user_id"], user["bank_card_id"],
+                                 data["amount"], data["description"],
+                                 "withdrawal_to_bank")
 
 
 # POST { user_id: <string> }
@@ -71,16 +73,8 @@ def query_transactions():
 @transaction_endpoint.route("/balance", methods=["POST"])
 def get_user_balance():
     user_id = request.json["user_id"]
-    user = User.get_user(user_id)
-    card = Card.get_user_card(user_id)
 
     if User.does_user_exist(user_id):
-        # 4 situations to summate to get balance
-        # paying someone (negative),
-        # getting paid (positive),
-        # paying for an item from balance (negative),
-        # adding a balance from card (positive)
-
         pay_transaction_to_user = list(mongo.db.transactions.find({"$and": [
             {"from_id": user_id},
             {"transaction_type": "individual_transaction"}]
@@ -101,10 +95,24 @@ def get_user_balance():
             ]
         }))
 
+        user_card_numbers = []
+        user_bank_cards = Card.get_user_bank_cards(user_id)
+        for card in user_bank_cards:
+            user_card_numbers.append(card["card_number"])
+
         payments_from_card = list(mongo.db.transactions.find({
             "$and": [
                 {"user_id": user_id},
-                {"to_id": ""}
+                {"from_id": {"$in": user_card_numbers}},
+                {"transaction_type": "plynk_good_service_payment"}
+            ]
+        }))
+
+        withdrawals_to_bank = list(mongo.db.transactions.find({
+            "$and": [
+                {"user_id": user_id},
+                {"to_id": {"$in": user_card_numbers}},
+                {"transaction_type": "withdrawal_to_bank"}
             ]
         }))
 
@@ -114,6 +122,14 @@ def get_user_balance():
             balance -= t["amount"]
         for t in receive_transaction_from_user:
             balance += t["amount"]
+
+        for t in preloadings_to_card:
+            balance += t["amount"]
+        for t in payments_from_card:
+            balance -= t["amount"]
+
+        for t in withdrawals_to_bank:
+            balance -= t["amount"]
 
         return Handler.get_json_res({"balance": float("{:.2f}".format(balance))})
 

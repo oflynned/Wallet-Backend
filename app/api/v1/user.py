@@ -35,19 +35,19 @@ def add_user_bank_card():
 
 # POST { user_id: <string> }
 @user.route("/get-bank-cards", methods=["POST"])
-def get():
+def get_bank_cards():
     data = request.json
     user_id = data["user_id"]
 
     if User.does_user_exist(user_id):
-        return Handler.get_json_res(Card.(user_id))
+        return Handler.get_json_res(Card.get_user_bank_cards(user_id))
 
     return Handler.get_json_res({"success": False})
 
 
 # POST { user_id: <string> }
 @user.route("/get-plynk-card", methods=["POST"])
-def get():
+def get_plynk_card():
     data = request.json
     user_id = data["user_id"]
 
@@ -61,7 +61,7 @@ def get():
 @user.route("/get", methods=["POST"])
 def get_user():
     data = request.json
-    return User.get_user(data["user_id"])
+    return Handler.get_json_res(User.get_user(data["user_id"]))
 
 
 # POST { user_id: <string>, passport_details: { passport_number: <string> }
@@ -152,15 +152,22 @@ class Card:
         ]}).count() > 0
 
     @staticmethod
-    def get_user_card(user_id):
-        card = list(mongo.db.card.find({"user_id": user_id}))[0]
-        card["user"] = User.get_user(user_id)
-        return card
+    def get_user_bank_cards(user_id):
+        bank_cards = list(mongo.db.card.find({"$and": [
+            {"user_id": user_id},
+            {"is_plynk_card": False}
+        ]}))
 
+        for card in bank_cards:
+            card["user"] = User.get_user(user_id)
+        return bank_cards
 
     @staticmethod
     def get_user_card(user_id):
-        card = list(mongo.db.card.find({"user_id": user_id}))[0]
+        card = list(mongo.db.card.find({"$and": [
+            {"user_id": user_id},
+            {"is_plynk_card": True}
+        ]}))[0]
         card["user"] = User.get_user(user_id)
         return card
 
