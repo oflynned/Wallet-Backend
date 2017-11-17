@@ -59,11 +59,20 @@ def load_card_money():
 @transaction_endpoint.route("/withdraw-to-bank", methods=["POST"])
 def withdraw_to_bank():
     data = request.json
-    bank_card = Card.get_user_bank_cards(data["user_id"])
-    Transaction.make_institution_transaction(data["user_id"], bank_card["card_number"],
-                                             data["amount"], data["description"],
-                                             "withdrawal_to_bank")
-    return Handler.get_json_res({"success": True})
+    user_id = data["user_id"]
+
+    if Card.did_user_add_bank_card(user_id):
+        bank_card = Card.get_user_card(user_id)
+        amount = data["amount"]
+
+        if Transaction.get_user_balance(user_id) > amount:
+            Transaction.make_institution_transaction(user_id, bank_card["card_number"],
+                                                     data["amount"], data["description"],
+                                                     "withdrawal_to_bank")
+            return Handler.get_json_res({"success": True})
+        else:
+            return Handler.get_json_res({"success": False, "reason": "insufficient_funds"})
+    return Handler.get_json_res({"success": False, "reason": "no_card_added"})
 
 
 # POST { user_id: <string> }
