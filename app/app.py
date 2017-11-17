@@ -11,10 +11,10 @@ static_dir = os.path.abspath("../../static/")
 app = Flask(__name__, template_folder=frontend_dir, static_folder=static_dir)
 
 if "MONGODB_URI" in os.environ:
-    app.config["MONGO_URI"] = os.environ["MONGODB_URI"] + "/plynk"
+    app.config["MONGO_URI"] = os.environ["MONGODB_URI"]
     print("Using remote server")
 else:
     app.config["MONGO_URI"] = "mongodb://localhost:27017/loinnir"
     print("Using local server")
-    
+
 mongo = PyMongo(app)
