@@ -29,18 +29,27 @@ def create_user():
 @user.route("/add-bank-card", methods=["POST"])
 def add_user_bank_card():
     data = request.json
-    Card.add_user_bank_card(data["user_id"], data["card_number"], data["card_cvv"], data["card_expiry"])
-    return Handler.get_json_res({"success": True})
+    user_id = data["user_id"]
+
+    if not Card.did_user_add_bank_card(user_id):
+        Card.add_user_bank_card(
+            user_id,
+            Card.generate_card_number(),
+            Card.generate_card_cvv(),
+            Card.generate_card_expiry()
+        )
+        return Handler.get_json_res({"success": True})
+    return Handler.get_json_res({"success": False, "reason": "bank_card_already_added"})
 
 
 # POST { user_id: <string> }
-@user.route("/get-bank-cards", methods=["POST"])
+@user.route("/get-bank-card", methods=["POST"])
 def get_bank_cards():
     data = request.json
     user_id = data["user_id"]
 
     if User.does_user_exist(user_id):
-        return Handler.get_json_res(Card.get_user_bank_cards(user_id))
+        return Handler.get_json_res(Card.get_user_bank_card(user_id))
 
     return Handler.get_json_res({"success": False})
 
@@ -100,9 +109,9 @@ class Card:
     def generate_user_card(user_id):
         if User.does_user_exist(user_id):
             if not Card._was_user_allocated_card(user_id):
-                card_cvv = Card._generate_card_cvv()
-                card_number = Card._generate_card_number()
-                card_expiry = Card._generate_card_expiry()
+                card_cvv = Card.generate_card_cvv()
+                card_number = Card.generate_card_number()
+                card_expiry = Card.generate_card_expiry()
 
                 mongo.db.card.save({
                     "user_id": user_id,
@@ -134,15 +143,18 @@ class Card:
         ]}).count() > 0
 
     @staticmethod
-    def get_user_bank_cards(user_id):
-        bank_cards = list(mongo.db.card.find({"$and": [
+    def get_user_bank_card(user_id):
+        bank_card = list(mongo.db.card.find({"$and": [
             {"user_id": user_id},
             {"is_plynk_card": False}
         ]}))
 
-        for card in bank_cards:
-            card["user"] = User.get_user(user_id)
-        return bank_cards
+        if len(bank_card) == 0:
+            return {"success": False}
+
+        bank_card = bank_card[0]
+        bank_card["user"] = User.get_user(user_id)
+        return bank_card
 
     @staticmethod
     def get_user_card(user_id):
@@ -154,11 +166,11 @@ class Card:
         return card
 
     @staticmethod
-    def _generate_card_cvv():
+    def generate_card_cvv():
         return randint(100, 999)
 
     @staticmethod
-    def _generate_card_number():
+    def generate_card_number():
         output = ""
 
         for i in range(4):
@@ -168,7 +180,7 @@ class Card:
         return output
 
     @staticmethod
-    def _generate_card_expiry():
+    def generate_card_expiry():
         current_time = datetime.now()
         year = current_time.year + 2
         month = current_time.month
@@ -176,5 +188,9 @@ class Card:
         return str(day) + "/" + str(month) + "/" + str(year)
 
     @staticmethod
+    def did_user_add_bank_card(user_id):
+        return mongo.db.card.find({"user_id": user_id, "is_plynk_card": False}).count() > 0
+
+    @staticmethod
     def _was_user_allocated_card(user_id):
-        return mongo.db.card.find({"user_id": user_id}).count() > 0
+        return mongo.db.card.find({"user_id": user_id, "is_plynk_card": True}).count() > 0

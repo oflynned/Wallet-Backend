@@ -59,8 +59,8 @@ def load_card_money():
 @transaction_endpoint.route("/withdraw-to-bank", methods=["POST"])
 def withdraw_to_bank():
     data = request.json
-    user = User.get_user(data["user_id"])
-    Transaction.make_institution_transaction(data["user_id"], user["bank_card_id"],
+    bank_card = Card.get_user_bank_cards(data["user_id"])
+    Transaction.make_institution_transaction(data["user_id"], bank_card["card_number"],
                                              data["amount"], data["description"],
                                              "withdrawal_to_bank")
     return Handler.get_json_res({"success": True})
@@ -167,15 +167,23 @@ class Transaction:
     @staticmethod
     def get_user_balance(user_id):
         if User.does_user_exist(user_id):
+            balance = 0
+
             pay_transaction_to_user = list(mongo.db.transactions.find({"$and": [
                 {"from_id": user_id},
                 {"transaction_type": "individual_transaction"}]
             }))
 
+            for t in pay_transaction_to_user:
+                balance -= t["amount"]
+
             receive_transaction_from_user = list(mongo.db.transactions.find({"$and": [
                 {"to_id": user_id},
                 {"transaction_type": "individual_transaction"}]
             }))
+
+            for t in receive_transaction_from_user:
+                balance += t["amount"]
 
             preloadings_via_android_pay = list(mongo.db.transactions.find({
                 "$and": [
@@ -184,17 +192,22 @@ class Transaction:
                 ]
             }))
 
-            preloadings_via_card = list(mongo.db.transactions.find({
-                "$and": [
-                    {"to_id": user_id},
-                    {"transaction_type": "preload_bank_card"}
-                ]
-            }))
+            for t in preloadings_via_android_pay:
+                balance += t["amount"]
 
-            user_card_numbers = []
-            user_bank_cards = Card.get_user_bank_cards(user_id)
-            for card in user_bank_cards:
-                user_card_numbers.append(card["card_number"])
+            user_card = Card.get_user_bank_card(user_id)
+            if "card_number" in user_card:
+                user_card_number = user_card["card_number"]
+                preloadings_via_card = list(mongo.db.transactions.find({
+                    "$and": [
+                        {"from_id": user_card_number},
+                        {"to_id": user_id},
+                        {"transaction_type": "preload_card"}
+                    ]
+                }))
+
+                for t in preloadings_via_card:
+                    balance += t["amount"]
 
             payments_from_card = list(mongo.db.transactions.find({
                 "$and": [
@@ -203,6 +216,9 @@ class Transaction:
                 ]
             }))
 
+            for t in payments_from_card:
+                balance -= t["amount"]
+
             withdrawals_to_bank = list(mongo.db.transactions.find({
                 "$and": [
                     {"from_id": user_id},
@@ -210,20 +226,6 @@ class Transaction:
                 ]
             }))
 
-            balance = 0
-
-            for t in pay_transaction_to_user:
-                balance -= t["amount"]
-            for t in receive_transaction_from_user:
-                balance += t["amount"]
-
-            for t in preloadings_via_android_pay:
-                balance += t["amount"]
-            for t in preloadings_via_card:
-                balance += t["amount"]
-
-            for t in payments_from_card:
-                balance -= t["amount"]
             for t in withdrawals_to_bank:
                 balance -= t["amount"]
 
