@@ -7,21 +7,71 @@ from app.helpers.handler import Handler
 transaction_endpoint = Blueprint("transaction", __name__)
 
 
-@transaction_endpoint.route("/", methods=["GET", "POST"])
-def index():
-    return Handler.get_json_res(list(mongo.db.transactions.find()))
-
-
 # make a transaction either to or from your account -- may be positive or negative
 # POST { from_id: <string>, to_id: <string>, amount: <float>, description: <string> }
 @transaction_endpoint.route("/make-individual-transaction", methods=["POST"])
 def individual_transaction():
     data = request.json
-    outcome = Transaction.make_transaction(data["from_id"], data["to_id"],
-                                           data["amount"], data["description"],
-                                           "individual_transaction")
+    from_id = data["from_id"]
+    transaction_amount = data["amount"]
 
-    return Handler.get_json_res({"success": outcome})
+    if transaction_amount <= Transaction.get_user_balance(from_id):
+        outcome = Transaction.make_transaction(data["from_id"], data["to_id"],
+                                               data["amount"], data["description"],
+                                               "individual_transaction")
+        return Handler.get_json_res({"success": outcome})
+
+    return Handler.get_json_res({"success": False, "reason": "insufficient_funds"})
+
+
+# POST { my_id: <string>, partner_id: <string> }
+@transaction_endpoint.route("/get-individual-transactions", methods=["POST"])
+def get_individual_transactions():
+    data = request.json
+    my_id = data["my_id"]
+    partner_id = data["partner_id"]
+
+    transactions = list(mongo.db.transactions.find({"$and": [
+        {"transaction_type": "individual_transaction"},
+        {"$or": [
+            {"from_id": partner_id, "to_id": my_id},
+            {"from_id": my_id, "to_id": partner_id}
+        ]}
+    ]}))
+
+    return Handler.get_json_res(transactions)
+
+
+# get in v out for a contact to see the differences and know if roughly even or not
+# POST { my_id: <string>, partner_id: <string> }
+@transaction_endpoint.route("/get-contact-transaction-sums", methods=["POST"])
+def get_contact_transaction_sums():
+    data = request.json
+    my_id = data["my_id"]
+    partner_id = data["partner_id"]
+
+    transactions_from_me_to_partner = list(mongo.db.transactions.find({
+        "from_id": my_id,
+        "to_id": partner_id,
+        "transaction_type": "individual_transaction"
+    }))
+
+    transactions_from_partner_to_me = list(mongo.db.transactions.find({
+        "from_id": partner_id,
+        "to_id": my_id,
+        "transaction_type": "individual_transaction"
+    }))
+
+    from_me_sum = 0
+    to_me_sum = 0
+
+    for t in transactions_from_me_to_partner:
+        from_me_sum += t["amount"]
+
+    for t in transactions_from_partner_to_me:
+        to_me_sum += t["amount"]
+
+    return Handler.get_json_res({"from_me_sum": from_me_sum, "to_me_sum": to_me_sum})
 
 
 # paying for an item via android pay -- take from balance
@@ -56,6 +106,7 @@ def load_card_money():
     return Handler.get_json_res({"success": True})
 
 
+# POST { user_id: <string> }
 @transaction_endpoint.route("/withdraw-to-bank", methods=["POST"])
 def withdraw_to_bank():
     data = request.json
@@ -134,6 +185,8 @@ class Transaction:
 
     @staticmethod
     def make_transaction(from_id, to_id, amount, description, transaction_type):
+        print(from_id, to_id, amount, description, transaction_type)
+
         if User.does_user_exist(from_id):
             transaction = {
                 "from_id": str(from_id),

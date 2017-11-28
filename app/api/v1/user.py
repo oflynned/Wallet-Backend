@@ -6,12 +6,12 @@ from flask import Blueprint, request
 from app.app import mongo
 from app.helpers.handler import Handler
 
-user = Blueprint("user", __name__)
+user_endpoint = Blueprint("user", __name__)
 
 
 # POST
 # user_details: { user_id: <string>, forename: <string>, surname: <string>, gender: [male|female] }
-@user.route("/create", methods=["POST"])
+@user_endpoint.route("/create", methods=["POST"])
 def create_user():
     data = request.json
     user_id = data["user_id"]
@@ -19,14 +19,17 @@ def create_user():
     if User.does_user_exist(user_id):
         return Handler.get_json_res({"success": False, "reason": "user_already_exists"})
 
+    data["profile_pic"] = "https://graph.facebook.com/" + data["user_id"] + "/picture?type=large"
+    data["creation_time"] = Handler.get_current_time_in_millis()
+
     mongo.db.users.save(data)
     Card.generate_user_card(user_id)
 
     return Handler.get_json_res({"success": True})
 
 
-# POST { user_id: <string>, card_number: <string>, card_cvv: <int>, card_expiry: <dd/mm/yyyy> }
-@user.route("/add-bank-card", methods=["POST"])
+# POST { user_id: <string> }
+@user_endpoint.route("/add-bank-card", methods=["POST"])
 def add_user_bank_card():
     data = request.json
     user_id = data["user_id"]
@@ -43,7 +46,7 @@ def add_user_bank_card():
 
 
 # POST { user_id: <string> }
-@user.route("/get-bank-card", methods=["POST"])
+@user_endpoint.route("/get-bank-card", methods=["POST"])
 def get_bank_cards():
     data = request.json
     user_id = data["user_id"]
@@ -55,7 +58,7 @@ def get_bank_cards():
 
 
 # POST { user_id: <string> }
-@user.route("/get-plynk-card", methods=["POST"])
+@user_endpoint.route("/get-plynk-card", methods=["POST"])
 def get_plynk_card():
     data = request.json
     user_id = data["user_id"]
@@ -67,14 +70,32 @@ def get_plynk_card():
 
 
 # POST { user_id: <string> }
-@user.route("/get", methods=["POST"])
+@user_endpoint.route("/get", methods=["POST"])
 def get_user():
     data = request.json
     return Handler.get_json_res(User.get_user(data["user_id"]))
 
 
+@user_endpoint.route("/get-all", methods=["GET"])
+def get_all_users():
+    return Handler.get_json_res(list(mongo.db.users.find()))
+
+
+@user_endpoint.route("/get-other-users", methods=["POST"])
+def get_other_users():
+    my_id = request.json["user_id"]
+    users = list(mongo.db.users.find({"user_id": {"$nin": [my_id]}}))
+    return Handler.get_json_res(users)
+
+
+@user_endpoint.route("/delete", methods=["POST"])
+def delete_user():
+    mongo.db.users.remove({"user_id": "1686100871401476"})
+    return Handler.get_json_res({})
+
+
 # POST { user_id: <string>, fcm_token: <string> }
-@user.route("/edit-fcm", methods=["POST"])
+@user_endpoint.route("/edit-fcm", methods=["POST"])
 def edit_user_fcm():
     user_id = request.json["user_id"]
 
@@ -85,11 +106,6 @@ def edit_user_fcm():
         return Handler.get_json_res({"success": True})
 
     return Handler.get_json_res({"success": False})
-
-
-@user.route("/delete", methods=["POST"])
-def delete_user():
-    pass
 
 
 class User:

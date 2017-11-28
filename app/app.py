@@ -14,7 +14,7 @@ if "MONGODB_URI" in os.environ:
     app.config["MONGO_URI"] = os.environ["MONGODB_URI"]
     print("Using remote server")
 else:
-    app.config["MONGO_URI"] = "mongodb://localhost:27017/loinnir"
+    app.config["MONGO_URI"] = "mongodb://localhost:27017/plynk"
     print("Using local server")
 
 mongo = PyMongo(app)
