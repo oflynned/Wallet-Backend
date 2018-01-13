@@ -58,8 +58,8 @@ def get_bank_cards():
 
 
 # POST { user_id: <string> }
-@user_endpoint.route("/get-plynk-card", methods=["POST"])
-def get_plynk_card():
+@user_endpoint.route("/get-digital-card", methods=["POST"])
+def get_digital_card():
     data = request.json
     user_id = data["user_id"]
 
@@ -131,7 +131,7 @@ class Card:
 
                 mongo.db.card.save({
                     "user_id": user_id,
-                    "is_plynk_card": True,
+                    "is_digital_card": True,
                     "card_number": card_number,
                     "card_cvv": card_cvv,
                     "card_expiry": card_expiry
@@ -143,7 +143,7 @@ class Card:
             if not Card._does_bank_card_exist(user_id, card_number, card_cvv, card_expiry):
                 mongo.db.card.save({
                     "user_id": user_id,
-                    "is_plynk_card": False,
+                    "is_digital_card": False,
                     "card_number": card_number,
                     "card_cvv": card_cvv,
                     "card_expiry": card_expiry
@@ -162,7 +162,7 @@ class Card:
     def get_user_bank_card(user_id):
         bank_card = list(mongo.db.card.find({"$and": [
             {"user_id": user_id},
-            {"is_plynk_card": False}
+            {"is_digital_card": False}
         ]}))
 
         if len(bank_card) == 0:
@@ -176,7 +176,7 @@ class Card:
     def get_user_card(user_id):
         card = list(mongo.db.card.find({"$and": [
             {"user_id": user_id},
-            {"is_plynk_card": True}
+            {"is_digital_card": True}
         ]}))[0]
         card["user"] = User.get_user(user_id)
         return card
@@ -205,8 +205,8 @@ class Card:
 
     @staticmethod
     def did_user_add_bank_card(user_id):
-        return mongo.db.card.find({"user_id": user_id, "is_plynk_card": False}).count() > 0
+        return mongo.db.card.find({"user_id": user_id, "is_digital_card": False}).count() > 0
 
     @staticmethod
     def _was_user_allocated_card(user_id):
-        return mongo.db.card.find({"user_id": user_id, "is_plynk_card": True}).count() > 0
+        return mongo.db.card.find({"user_id": user_id, "is_digital_card": True}).count() > 0

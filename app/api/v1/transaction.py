@@ -77,7 +77,7 @@ def get_contact_transaction_sums():
 # paying for an item via android pay -- take from balance
 # POST { user_id: <string>, merchant_id: <string>, amount: <float>, description: <string> }
 @transaction_endpoint.route("/make-card-payment", methods=["POST"])
-def plynk_card_payment():
+def card_payment():
     data = request.json
     user_id = data["user_id"]
     amount = data["amount"]
@@ -86,7 +86,7 @@ def plynk_card_payment():
         if Transaction.get_user_balance(user_id) >= amount:
             outcome = Transaction.make_transaction(user_id, data["merchant_id"],
                                                    data["amount"], data["description"],
-                                                   "plynk_good_service_payment")
+                                                   "good_service_payment")
             return Handler.get_json_res({"success": outcome})
 
         return Handler.get_json_res({"success": False, "reason": "insufficient_funds"})
@@ -274,7 +274,7 @@ class Transaction:
             payments_from_card = list(mongo.db.transactions.find({
                 "$and": [
                     {"from_id": user_id},
-                    {"transaction_type": "plynk_good_service_payment"}
+                    {"transaction_type": "good_service_payment"}
                 ]
             }))
 
