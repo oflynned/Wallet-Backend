@@ -90,8 +90,9 @@ def get_other_users():
 
 @user_endpoint.route("/delete", methods=["POST"])
 def delete_user():
-    mongo.db.users.remove({"user_id": "1686100871401476"})
-    return Handler.get_json_res({})
+    uid = request.json["user_id"]
+    mongo.db.users.remove({"user_id": uid})
+    return Handler.get_json_res({"uid": uid})
 
 
 # POST { user_id: <string>, fcm_token: <string> }
